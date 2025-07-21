@@ -45,6 +45,20 @@ export interface ConverterOptions {
    * and the schema of it is required.
    */
   resolveRefSchema?: (name: string) => Schema;
+
+  /**
+   * Policies for controlling how different schema constructs are handled
+   */
+  policies?: {
+    /**
+     * Controls how objects with additionalProperties: false are handled
+     *
+     * - "strict" (default): Follow JSON schema exactly - use D.exact when additionalProperties: false
+     * - "loose": Use D.object instead of D.exact when additionalProperties: false (allows extra properties but discards them)
+     * - "inexact": Use D.inexact when additionalProperties: false (allows extra properties and keeps them)
+     */
+    objects?: "strict" | "loose" | "inexact";
+  };
 }
 
 /**
@@ -124,7 +138,7 @@ function getSchemaComment(schema: Schema): string[] {
 }
 
 function convertObject(obj: ObjectSchema, opt: ConvertContext): string[] {
-  const { nsPrefix } = opt.options;
+  const { nsPrefix, policies } = opt.options;
   const chain: string[][] = [];
 
   // Non-structured objects require string properties but don't validate the values
@@ -132,8 +146,26 @@ function convertObject(obj: ObjectSchema, opt: ConvertContext): string[] {
     return [`${nsPrefix}dict(${nsPrefix}unknown)`];
   }
 
-  // Check if we should perform exact matching
-  const exactProps = obj.additionalProperties === false && !obj.patternProperties;
+  // Determine the decoder type based on policy
+  function getObjectDecoderType(): string {
+    // Check if we should perform exact matching according to JSON schema
+    const schemaRequiresExact = obj.additionalProperties === false && !obj.patternProperties;
+    if (!schemaRequiresExact) {
+      // If schema allows additional properties, always use inexact
+      return "inexact";
+    }
+
+    // Schema says additionalProperties: false - apply policy
+    const objectPolicy = policies?.objects ?? "strict";
+    switch (objectPolicy) {
+      case "strict":
+        return "exact";
+      case "loose":
+        return "object";
+      case "inexact":
+        return "inexact";
+    }
+  }
 
   // Create the base decoder for validating either well-known properties or a gneric
   // dict type, either strictly or loosely. We will then follow-up chaining additional
@@ -163,11 +195,7 @@ function convertObject(obj: ObjectSchema, opt: ConvertContext): string[] {
         );
       }
     }
-    chain.push([
-      `${nsPrefix}${exactProps ? "exact" : "inexact"}({`,
-      ...indentLines(propLines, 2),
-      `})`,
-    ]);
+    chain.push([`${nsPrefix}${getObjectDecoderType()}({`, ...indentLines(propLines, 2), `})`]);
   } else if (obj.additionalProperties != null && typeof obj.additionalProperties === "object") {
     // If we have 'additional properties' without any strictly defined property,
     // we shoudl emit a dict.
@@ -689,6 +717,7 @@ export function convertSchema(schema: Schema, options?: ConverterOptions): strin
     nsPrefix: options?.nsPrefix ?? "",
     resolveRefPointer: options?.resolveRefPointer,
     resolveRefSchema: options?.resolveRefSchema,
+    policies: options?.policies,
   };
   const ctx: ConvertContext = {
     options: opt,

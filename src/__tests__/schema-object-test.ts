@@ -248,4 +248,98 @@ describe("JSON Schema (Object)", () => {
       }).ok
     ).toBeFalsy();
   });
+
+  describe("Object Policies", () => {
+    describe("with additionalProperties: false", () => {
+      const baseSchema = {
+        type: "object" as const,
+        properties: {
+          name: { type: "string" as const },
+          age: { type: "number" as const },
+        },
+        additionalProperties: false,
+      };
+      const strictData = { name: "John", age: 30 };
+      const inexactData = { name: "John", age: 30, city: "NYC" };
+
+      test("strict policy (default) - rejects extra properties", () => {
+        const strictDecoder = createValidator(baseSchema, {
+          policies: { objects: "strict" },
+        });
+
+        expect(strictDecoder.decode(strictData).ok).toBeTruthy();
+        expect(strictDecoder.decode(strictData).value).toEqual(strictData);
+
+        // rejects - too wide
+        expect(strictDecoder.decode(inexactData).ok).toBeFalsy();
+      });
+
+      test("default behavior (should be strict) - rejects extra properties", () => {
+        const defaultDecoder = createValidator(baseSchema);
+        // rejects - too wide
+        expect(defaultDecoder.decode(inexactData).ok).toBeFalsy();
+      });
+
+      test("loose policy - allows extra properties but discards them", () => {
+        const looseDecoder = createValidator(baseSchema, {
+          policies: { objects: "loose" },
+        });
+
+        expect(looseDecoder.decode(strictData).ok).toBeTruthy();
+        expect(looseDecoder.decode(strictData).value).toEqual(strictData);
+
+        expect(looseDecoder.decode(inexactData).ok).toBeTruthy();
+        expect(looseDecoder.decode(inexactData).value).toEqual(strictData); // Extra property discarded
+      });
+
+      test("inexact policy - allows extra properties and keeps them", () => {
+        const inexactDecoder = createValidator(baseSchema, {
+          policies: { objects: "inexact" },
+        });
+
+        expect(inexactDecoder.decode(strictData).ok).toBeTruthy();
+        expect(inexactDecoder.decode(strictData).value).toEqual(strictData);
+
+        expect(inexactDecoder.decode(inexactData).ok).toBeTruthy();
+        expect(inexactDecoder.decode(inexactData).value).toEqual(inexactData); // Extra property kept
+      });
+    });
+
+    describe("with additionalProperties: true", () => {
+      const schemaWithAdditionalProps = {
+        type: "object" as const,
+        properties: {
+          name: { type: "string" as const },
+        },
+        additionalProperties: true,
+      };
+
+      test("policies should not affect behavior when additionalProperties is true", () => {
+        // When additionalProperties is true, policy should not matter - always use inexact
+        const strictDecoder = createValidator(schemaWithAdditionalProps, {
+          policies: { objects: "strict" },
+        });
+
+        const looseDecoder = createValidator(schemaWithAdditionalProps, {
+          policies: { objects: "loose" },
+        });
+
+        const inexactDecoder = createValidator(schemaWithAdditionalProps, {
+          policies: { objects: "inexact" },
+        });
+
+        const dataWithExtra = { name: "John", city: "NYC" };
+
+        // All should behave the same (inexact) when additionalProperties is true
+        expect(strictDecoder.decode(dataWithExtra).ok).toBeTruthy();
+        expect(strictDecoder.decode(dataWithExtra).value).toEqual(dataWithExtra);
+
+        expect(looseDecoder.decode(dataWithExtra).ok).toBeTruthy();
+        expect(looseDecoder.decode(dataWithExtra).value).toEqual(dataWithExtra);
+
+        expect(inexactDecoder.decode(dataWithExtra).ok).toBeTruthy();
+        expect(inexactDecoder.decode(dataWithExtra).value).toEqual(dataWithExtra);
+      });
+    });
+  });
 });

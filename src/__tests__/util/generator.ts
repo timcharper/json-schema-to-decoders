@@ -13,6 +13,7 @@ export function createValidator(schema: Schema, args?: ValidatorArgs): D.Decoder
     nsLib: "this.L.",
     resolveRefPointer: args?.resolveRefPointer,
     resolveRefSchema: args?.resolveRefSchema,
+    policies: args?.policies,
   });
   const decoder: D.Decoder<unknown> = new Function(`"use strict"; return ${script}`).bind({
     D,
